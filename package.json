@@ -19,14 +19,16 @@
     "browserify": "^17.0.1",
     "browserify-fs": "^1.0.0",
     "crypto-browserify": "^3.12.1",
+    "konva": "^8.4.3",
     "path": "^0.12.7",
     "path-browserify": "^1.0.1",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
     "react-mindee-js": "^1.6.5",
     "react-scripts": "^5.0.1",
     "react-webcam": "^7.2.0",
     "typescript": "^4.9.5",
+    "underscore": "^1.13.7",
     "vm-browserify": "^1.1.2",
     "web-vitals": "^2.1.4"
   },
@@ -55,6 +57,7 @@
     ]
   },
   "devDependencies": {
+    "@types/underscore": "^1.13.0",
     "react-app-rewired": "^2.2.1",
     "stream-browserify": "^3.0.0"
   }
