@@ -1,6 +1,6 @@
-# **OCR Text Detection using React, TypeScript, and TensorFlow.js**
+# **Real-Time OCR Text Detection using React, TypeScript, and TensorFlow.js**
 
-This project implements Optical Character Recognition (OCR) using **React**, **TypeScript**, and **TensorFlow.js**. It enables real-time text detection and recognition from live video streams.
+This project implements Optical Character Recognition (OCR) using **React**, **TypeScript**, and **TensorFlow.js**. It enables real-time text detection and recognition from live video streams via your webcam.
 
 ---
 
