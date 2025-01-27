@@ -8,12 +8,17 @@ import {
   argMax,
   concat,
   softmax,
+  Tensor,
+  Tensor2D,
+  Tensor3D,
+  tidy,
 } from "@tensorflow/tfjs";
 import { MutableRefObject } from "react";
 import { ModelConfig } from "../common/types";
 import {
   DET_MEAN,
   DET_STD,
+  MIN_RATIO,
   REC_MEAN,
   REC_STD,
   VOCAB,
@@ -72,17 +77,40 @@ export const getDetectedBoundingBoxes = async ({
     heatmapContainer!.width = imgRef.width;
     heatmapContainer!.height = imgRef.height;
 
+    let prediction: Tensor | null = null;
+
     try {
-      const tensor = getImageTensorForDetectionModel(imgRef, size);
-      let prediction: any = detectionModel?.execute(tensor);
-      prediction = squeeze(prediction, [0]);
-      if (Array.isArray(prediction)) {
-        prediction = prediction[0];
-      }
-      await browser.toPixels(prediction, heatmapContainer);
-      resolve();
+      const pred = tidy(() => {
+        const tensor = getImageTensorForDetectionModel(imgRef, size);
+
+        prediction = detectionModel.execute(tensor) as Tensor;
+        const squeezedPrediction = squeeze(prediction, [0]);
+
+        let finalPrediction: Tensor2D | Tensor3D;
+
+        if (squeezedPrediction.shape.length === 2) {
+          // Grayscale image: Add the 3rd dimension (for RGB channels)
+          finalPrediction = squeezedPrediction
+            .expandDims(-1)
+            .tile([1, 1, 3]) as Tensor3D;
+        } else {
+          // Already a 3D tensor
+          finalPrediction = squeezedPrediction as Tensor3D;
+        }
+
+        return finalPrediction;
+      });
+
+      // Convert to canvas
+      await browser.toPixels(pred, heatmapContainer);
+      pred.dispose();
     } catch (error) {
       console.error("Error during detection:", error);
+    } finally {
+      // Dispose of prediction if it exists
+      if (prediction) {
+        (prediction as Tensor).dispose();
+      }
       resolve();
     }
   });
@@ -91,14 +119,15 @@ export const getImageTensorForDetectionModel = (
   imageObject: HTMLImageElement,
   size: [number, number]
 ) => {
-  let tensor = browser
-    .fromPixels(imageObject)
-    .resizeNearestNeighbor(size)
-    .toFloat();
-  let mean = scalar(255 * DET_MEAN);
-  let std = scalar(255 * DET_STD);
-  const tensorObject = tensor.sub(mean).div(std).expandDims();
-  return tensorObject;
+  return tidy(() => {
+    let tensor = browser
+      .fromPixels(imageObject)
+      .resizeNearestNeighbor(size)
+      .toFloat();
+    let mean = scalar(255 * DET_MEAN);
+    let std = scalar(255 * DET_STD);
+    return tensor.sub(mean).div(std).expandDims();
+  });
 };
 
 export const extractBoundingBoxes = (size: [number, number]) => {
@@ -125,7 +154,7 @@ export const extractBoundingBoxes = (size: [number, number]) => {
     if (
       contourBoundingBox.width > 2 &&
       contourBoundingBox.height > 2 &&
-      contourBoundingBox.height / contourBoundingBox.width < 0.2
+      contourBoundingBox.height / contourBoundingBox.width < MIN_RATIO
     ) {
       const transformedBox = transformBoundingBox(contourBoundingBox, i, size);
       if (transformedBox !== null) {
@@ -197,7 +226,7 @@ export const extractWords = async ({
             crops: chunk.map((elem) => elem.crop),
             size,
           });
-          const collection = words?.map((word, index) => ({
+          const collection = words?.map((word: any, index: any) => ({
             ...chunk[index],
             words: word ? [word] : [],
           }));
@@ -227,7 +256,7 @@ export const getCrops = ({ stage }: { stage: Stage }) => {
         const clientRect = polygon.getClientRect();
 
         const ratio = clientRect.height / clientRect.width;
-        if (ratio > 0.2) {
+        if (ratio > MIN_RATIO) {
           return null;
         }
 
@@ -262,30 +291,63 @@ export const extractWordsFromCrop = async ({
   if (!recognitionModel) {
     return;
   }
-  let tensor = getImageTensorForRecognitionModel(crops, size);
-  let predictions = await recognitionModel.executeAsync(tensor);
 
-  // @ts-ignore
-  let probabilities = softmax(predictions, -1);
-  let bestPath = unstack(argMax(probabilities, -1), 0);
-  let blank = 126;
-  var words = [];
-  for (const sequence of bestPath) {
-    let collapsed = "";
-    let added = false;
-    const values = sequence.dataSync();
-    const arr = Array.from(values);
-    for (const k of arr) {
-      if (k === blank) {
-        added = false;
-      } else if (k !== blank && added === false) {
-        collapsed += VOCAB[k];
-        added = true;
+  const blank = 126;
+  let tensor: Tensor | null = null;
+  let predictions: Tensor | Tensor[] | null = null;
+
+  try {
+    tensor = tidy(() => {
+      return getImageTensorForRecognitionModel(crops, size);
+    });
+    console.log("tensor: ", tensor);
+    const predictions = await recognitionModel.executeAsync(tensor);
+
+    const words = tidy(() => {
+      const wordsTemp: string[] = [];
+      let predictionTensor: Tensor;
+      if (Array.isArray(predictions)) {
+        predictionTensor = predictions[0];
+      } else {
+        predictionTensor = predictions!;
+      }
+
+      const probabilities = softmax(predictionTensor, -1);
+      const bestPath = unstack(argMax(probabilities, -1), 0);
+
+      for (const sequence of bestPath) {
+        let collapsed = "";
+        let added = false;
+        const values = sequence.dataSync();
+        const arr = Array.from(values);
+
+        for (const k of arr as number[]) {
+          if (k === blank) {
+            added = false;
+          } else if (k !== blank && !added) {
+            collapsed += VOCAB[k];
+            added = true;
+          }
+        }
+
+        wordsTemp.push(collapsed);
+        return wordsTemp;
+      }
+    });
+    return words;
+  } catch (error) {
+    console.error("Error during word extraction:", error);
+    return [];
+  } finally {
+    if (tensor) tensor.dispose();
+    if (predictions) {
+      if (Array.isArray(predictions)) {
+        (predictions as Tensor[]).forEach((pred) => pred.dispose());
+      } else {
+        (predictions as Tensor).dispose();
       }
     }
-    words.push(collapsed);
   }
-  return words;
 };
 
 export const getImageTensorForRecognitionModel = (

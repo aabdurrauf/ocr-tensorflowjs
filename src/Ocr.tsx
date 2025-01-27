@@ -1,7 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import Webcam from "react-webcam";
-import { DET_CONFIG, RECO_CONFIG, CODE_LEN, INTERVAL } from "./common/constants";
-import { GraphModel, backend, disposeVariables } from "@tensorflow/tfjs";
+import {
+  DET_CONFIG,
+  RECO_CONFIG,
+  CODE_LEN,
+  INTERVAL,
+} from "./common/constants";
+import { GraphModel } from "@tensorflow/tfjs";
 import {
   loadDetectionModel,
   loadRecognitionModel,
@@ -13,6 +18,7 @@ import { AnnotationData, AnnotationViewer, Stage } from "react-mindee-js";
 import HeatMap from "./components/HeatMap";
 import { Word } from "./common/types";
 import { flatten } from "underscore";
+import * as tf from "@tensorflow/tfjs";
 
 export default function Ocr() {
   const [modelLoaded, setModelLoaded] = useState(false);
@@ -31,14 +37,12 @@ export default function Ocr() {
     if (words && words.length > 0) {
       const selectedWord = words.reduce((prev, current) => {
         const currentWord = current.words[0] || "";
-        return currentWord.length === CODE_LEN ? currentWord : prev;
+        // return currentWord.length === CODE_LEN ? currentWord : prev;
+        return currentWord.length > prev.length ? currentWord : prev;
       }, "");
       console.log("Longest word detected:", selectedWord);
 
       setPredictedWords(selectedWord);
-      // if (predictedWords.length < longestWord.length) {
-      //   setPredictedWords(longestWord);
-      // }
     }
   }, [words]);
 
@@ -49,14 +53,27 @@ export default function Ocr() {
   const heatmapContainer = useRef<HTMLCanvasElement | null>(null);
   const annotationStage = useRef<Stage | null>();
 
+  const [bytes, setBytes] = useState<number>(0);
+
   useEffect(() => {
     setAnnotationData({ image: null });
     loadDetectionModel({ detectionModel, detConfig });
     loadRecognitionModel({ recognitionModel, recoConfig });
     setModelLoaded(true);
+    console.log("detection and recognitoin model loaded.");
   }, [detConfig, recoConfig]);
 
   useEffect(() => {
+    // use GPU acceleration if available
+    tf.setBackend("webgl").then(() => {
+      const currentBackend = tf.getBackend();
+      if (currentBackend === "webgl") {
+        console.log("Using GPU for computations");
+      } else {
+        console.log("Falling back to CPU");
+      }
+    });
+
     if (heatmapContainer.current) {
       const context = heatmapContainer.current.getContext("2d", {
         willReadFrequently: true,
@@ -87,6 +104,7 @@ export default function Ocr() {
               size: [detConfig.height, detConfig.width],
             });
             getBoundingBoxes();
+            tf.disposeVariables();
             resolve();
           } catch (error) {
             console.log(error);
@@ -105,8 +123,14 @@ export default function Ocr() {
       if (timestamp - lastTime >= interval) {
         lastTime = timestamp;
         detectTexts();
-        disposeVariables(); // Dispose of any TensorFlow.js variables in memory
-        backend().dispose(); // Dispose of the current backend, which clears WebGL resources
+        const memoryInfo: tf.MemoryInfo = tf.memory();
+        if (
+          "numBytesInGPU" in memoryInfo &&
+          typeof memoryInfo.numBytesInGPU === "number"
+        ) {
+          setBytes(memoryInfo.numBytesInGPU);
+          console.log("bytes in gpu: ", memoryInfo.numBytesInGPU);
+        }
       }
       handle = requestAnimationFrame(nextTick);
     };
@@ -116,6 +140,13 @@ export default function Ocr() {
       cancelAnimationFrame(handle);
     };
   }, [modelLoaded]);
+
+  useEffect(() => {
+    if (bytes > 1000000000) {
+      console.log("free space!!");
+      tf.disposeVariables();
+    }
+  }, [bytes]);
 
   const setAnnotationStage = (stage: Stage) => {
     annotationStage.current = stage;
@@ -130,7 +161,8 @@ export default function Ocr() {
       image: imageObject.current.src,
       shapes: boundingBoxes,
     });
-    setTimeout(getWords, 1000);
+
+    setTimeout(getWords, 500);
   };
 
   const getWords = async () => {

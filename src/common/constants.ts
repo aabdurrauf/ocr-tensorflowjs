@@ -6,6 +6,7 @@
 // code cfg
 export const CODE_LEN = 10;
 export const INTERVAL = 100;
+export const MIN_RATIO = 0.35;
 
 // Detection cfg
 
