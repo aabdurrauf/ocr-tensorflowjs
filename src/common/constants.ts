@@ -3,6 +3,10 @@
 // This program is licensed under the Apache License version 2.
 // See LICENSE or go to <https://www.apache.org/licenses/LICENSE-2.0.txt> for full license details.
 
+// code cfg
+export const CODE_LEN = 10;
+export const INTERVAL = 100;
+
 // Detection cfg
 
 export const DET_MEAN = 0.785;

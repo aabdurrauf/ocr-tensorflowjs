@@ -122,10 +122,18 @@ export const extractBoundingBoxes = (size: [number, number]) => {
   // @ts-ignore
   for (let i = 0; i < contours.size(); ++i) {
     const contourBoundingBox = cv.boundingRect(contours.get(i));
-    if (contourBoundingBox.width > 2 && contourBoundingBox.height > 2) {
-      boundingBoxes.unshift(transformBoundingBox(contourBoundingBox, i, size));
+    if (
+      contourBoundingBox.width > 2 &&
+      contourBoundingBox.height > 2 &&
+      contourBoundingBox.height / contourBoundingBox.width < 0.2
+    ) {
+      const transformedBox = transformBoundingBox(contourBoundingBox, i, size);
+      if (transformedBox !== null) {
+        boundingBoxes.unshift(transformedBox);
+      }
     }
   }
+
   src.delete();
   contours.delete();
   hierarchy.delete();
@@ -179,7 +187,7 @@ export const extractWords = async ({
     crop: HTMLImageElement;
     color: string;
   }>;
-  const chunks = chunk(crops, 32);
+  const chunks = chunk(crops, 16);
   return Promise.all(
     chunks.map(
       (chunk) =>
@@ -212,24 +220,33 @@ export const getCrops = ({ stage }: { stage: Stage }) => {
     throw new Error("Layer with ID '#shapes-layer' not found in the stage.");
   }
   const polygons = layer.find(".shape");
+
   return Promise.all(
-    polygons.map((polygon: any) => {
-      const clientRect = polygon.getClientRect();
-      return new Promise((resolve) => {
-        stage.toImage({
-          ...clientRect,
-          quality: 5,
-          pixelRatio: 10,
-          callback: (value: HTMLImageElement) => {
-            resolve({
-              id: polygon.id(),
-              crop: value,
-              color: polygon.getAttr("stroke"),
-            });
-          },
+    polygons
+      .map((polygon: any) => {
+        const clientRect = polygon.getClientRect();
+
+        const ratio = clientRect.height / clientRect.width;
+        if (ratio > 0.2) {
+          return null;
+        }
+
+        return new Promise((resolve) => {
+          stage.toImage({
+            ...clientRect,
+            quality: 5,
+            pixelRatio: 10,
+            callback: (value: HTMLImageElement) => {
+              resolve({
+                id: polygon.id(),
+                crop: value,
+                color: polygon.getAttr("stroke"),
+              });
+            },
+          });
         });
-      });
-    })
+      })
+      .filter(Boolean)
   );
 };
 

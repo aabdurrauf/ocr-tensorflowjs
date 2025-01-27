@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import Webcam from "react-webcam";
-import { DET_CONFIG, RECO_CONFIG } from "./common/constants";
-import { GraphModel } from "@tensorflow/tfjs";
+import { DET_CONFIG, RECO_CONFIG, CODE_LEN, INTERVAL } from "./common/constants";
+import { GraphModel, backend, disposeVariables } from "@tensorflow/tfjs";
 import {
   loadDetectionModel,
   loadRecognitionModel,
@@ -29,13 +29,13 @@ export default function Ocr() {
 
   useEffect(() => {
     if (words && words.length > 0) {
-      const longestWord = words.reduce((longest, current) => {
+      const selectedWord = words.reduce((prev, current) => {
         const currentWord = current.words[0] || "";
-        return currentWord.length > longest.length ? currentWord : longest;
+        return currentWord.length === CODE_LEN ? currentWord : prev;
       }, "");
-      console.log("Longest word detected:", longestWord);
+      console.log("Longest word detected:", selectedWord);
 
-      setPredictedWords(longestWord);
+      setPredictedWords(selectedWord);
       // if (predictedWords.length < longestWord.length) {
       //   setPredictedWords(longestWord);
       // }
@@ -58,7 +58,9 @@ export default function Ocr() {
 
   useEffect(() => {
     if (heatmapContainer.current) {
-      const context = heatmapContainer.current.getContext("2d");
+      const context = heatmapContainer.current.getContext("2d", {
+        willReadFrequently: true,
+      });
       context?.clearRect(
         0,
         0,
@@ -78,9 +80,6 @@ export default function Ocr() {
       return new Promise<void>((resolve) => {
         imageObject.current.onload = async () => {
           try {
-            // const img = cv.imread(imageObject.current);
-            // cv.imshow(textImgRef.current, img);
-
             await getDetectedBoundingBoxes({
               heatmapContainer: heatmapContainer.current,
               detectionModel: detectionModel.current,
@@ -88,8 +87,6 @@ export default function Ocr() {
               size: [detConfig.height, detConfig.width],
             });
             getBoundingBoxes();
-
-            // img.delete();
             resolve();
           } catch (error) {
             console.log(error);
@@ -101,13 +98,20 @@ export default function Ocr() {
     };
 
     let handle: any;
-    const nextTick = () => {
-      handle = requestAnimationFrame(async () => {
-        await detectTexts();
-        nextTick();
-      });
+    let lastTime = 0;
+    const interval = INTERVAL;
+
+    const nextTick = (timestamp: number) => {
+      if (timestamp - lastTime >= interval) {
+        lastTime = timestamp;
+        detectTexts();
+        disposeVariables(); // Dispose of any TensorFlow.js variables in memory
+        backend().dispose(); // Dispose of the current backend, which clears WebGL resources
+      }
+      handle = requestAnimationFrame(nextTick);
     };
-    nextTick();
+
+    handle = requestAnimationFrame(nextTick);
     return () => {
       cancelAnimationFrame(handle);
     };
