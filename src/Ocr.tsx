@@ -32,6 +32,7 @@ export default function Ocr() {
     "Bir yazı gösterin..."
   );
   const [words, setWords] = useState<Word[]>([]);
+  const [detectedSuccess, setDetectedSuccess] = useState<boolean>(false);
 
   useEffect(() => {
     if (words && words.length > 0) {
@@ -41,8 +42,20 @@ export default function Ocr() {
         return currentWord.length > prev.length ? currentWord : prev;
       }, "");
       console.log("Longest word detected:", selectedWord);
-
       setPredictedWords(selectedWord);
+      if (selectedWord.length == CODE_LEN) {
+        setDetectedSuccess(true);
+      }
+
+      // const allWords = words
+      //   .map((item) => item.words[0] || "") // Extract first word from each item
+      //   .filter((word) => word.trim() !== "") // Remove empty words
+      //   .join("\n"); // Join words with newline
+
+      // console.log("words: ", words);
+      // console.log("All words detected:\n", allWords);
+
+      // setPredictedWords(allWords);
     }
   }, [words]);
 
@@ -129,13 +142,16 @@ export default function Ocr() {
           typeof memoryInfo.numBytesInGPU === "number"
         ) {
           setBytes(memoryInfo.numBytesInGPU);
-          console.log("bytes in gpu: ", memoryInfo.numBytesInGPU);
+          // console.log("bytes in gpu: ", memoryInfo.numBytesInGPU);
         }
       }
       handle = requestAnimationFrame(nextTick);
     };
 
-    handle = requestAnimationFrame(nextTick);
+    if (!detectedSuccess) {
+      handle = requestAnimationFrame(nextTick);
+    }
+
     return () => {
       cancelAnimationFrame(handle);
     };
@@ -187,55 +203,58 @@ export default function Ocr() {
       <header style={{ marginBottom: "20px" }}>
         <h2>Real-Time OCR</h2>
       </header>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: "25px",
-        }}
-      >
-        {/* Webcam Section */}
+
+      {!detectedSuccess && (
         <div
           style={{
-            flex: 1,
             display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "25px",
           }}
         >
-          <Webcam
-            ref={webcamRef}
-            // mirrored
-            screenshotFormat="image/jpeg"
-            style={{
-              width: "400px", // Set the desired width
-              height: "300px", // Set the desired height
-            }}
-          />
-        </div>
-
-        <HeatMap heatMapContainerRef={heatmapContainer} />
-        {annotationData && (
+          {/* Webcam Section */}
           <div
             style={{
-              width: "400px",
-              height: "300px",
+              flex: 1,
               display: "flex",
               justifyContent: "center",
+              alignItems: "center",
             }}
           >
-            <AnnotationViewer
-              data={annotationData}
-              getStage={setAnnotationStage}
+            <Webcam
+              ref={webcamRef}
+              // mirrored
+              screenshotFormat="image/jpeg"
               style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
+                width: "400px", // Set the desired width
+                height: "300px", // Set the desired height
               }}
             />
           </div>
-        )}
-      </div>
+
+          <HeatMap heatMapContainerRef={heatmapContainer} />
+          {annotationData && (
+            <div
+              style={{
+                width: "400px",
+                height: "300px",
+                display: "flex",
+                justifyContent: "center",
+              }}
+            >
+              <AnnotationViewer
+                data={annotationData}
+                getStage={setAnnotationStage}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Loading Message */}
       {!modelLoaded && (

@@ -85,9 +85,8 @@ export const getDetectedBoundingBoxes = async ({
 
         prediction = detectionModel.execute(tensor) as Tensor;
         const squeezedPrediction = squeeze(prediction, [0]);
-
+        
         let finalPrediction: Tensor2D | Tensor3D;
-
         if (squeezedPrediction.shape.length === 2) {
           // Grayscale image: Add the 3rd dimension (for RGB channels)
           finalPrediction = squeezedPrediction
@@ -300,7 +299,7 @@ export const extractWordsFromCrop = async ({
     tensor = tidy(() => {
       return getImageTensorForRecognitionModel(crops, size);
     });
-    console.log("tensor: ", tensor);
+    // console.log("tensor: ", tensor);
     const predictions = await recognitionModel.executeAsync(tensor);
 
     const words = tidy(() => {
